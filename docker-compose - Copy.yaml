@@ -1,0 +1,123 @@
+version: '3'
+
+services:
+  #********************************************* NiFi Services ****************************************************************
+  nifi:
+    image: custom-nifi-image
+    container_name: nifi
+    environment:
+      SINGLE_USER_CREDENTIALS_USERNAME: ${NiFi_USERNAME}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NiFi_PASSWORD}
+
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./nifi/conf:/opt/nifi/nifi-current/conf
+      - ./nifi/scripts/executeStream:/opt/nifi/nifi-current/scripts/executeStream
+      - ./nifi/database_repository:/opt/nifi/nifi-current/database_repository
+      - ./nifi/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
+      - ./nifi/content_repository:/opt/nifi/nifi-current/content_repository
+      - ./nifi/provenance_repository:/opt/nifi/nifi-current/provenance_repository
+    restart: unless-stopped
+    networks:
+      - persistent_network
+
+  nifi-registry:
+    image: apache/nifi-registry
+    container_name: nifi-registry
+    ports:
+      - "18080:18080"
+    volumes:
+      - ./nifi-registry/flow_storage:/opt/nifi-registry/nifi-registry-current/flow_storage
+      - ./nifi-registry/database:/opt/nifi-registry/nifi-registry-current/database
+    restart: unless-stopped
+    networks:
+      - persistent_network
+  #********************************************* Postgres Database ****************************************************************
+  postgres-db:
+    container_name: postgres_container
+    image: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgresql:/run/postgresql
+    networks:
+      - persistent_network
+  pgadmin:
+    container_name: pgadmin4_container
+    image: dpage/pgadmin4
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - persistent_network
+
+  #******************************************** SFTP Services *****************************************************************
+  sftp-server:
+    image: atmoz/sftp
+    container_name: sftp-server
+    environment:
+      - SFTP_USERS=${SFTP_USERNAME}:${SFTP_PASSWORD}:1001
+    ports:
+      - "2222:22"
+    volumes:
+      - ./source:/home/admin/data/source
+      - ./target:/home/admin/data/target
+    restart: unless-stopped
+    networks:
+      - persistent_network
+  filezilla:
+    image: jlesage/filezilla
+    container_name: filezilla
+    environment:
+      - USER_ID=1000
+      - GROUP_ID=1000
+      - TZ=UTC
+    ports:
+      - "5800:5800"
+    volumes:
+      - filezilla-config:/config
+      - filezilla-data:/data
+    restart: unless-stopped
+    networks:
+      - persistent_network
+    #******************************************** Dockerfile Services *****************************************************************
+
+    #Triggers the dockerfile
+  nifi-service:
+    build: .
+    container_name: apache-nifi-dockerfile
+    mem_limit: 4g
+    cpus: 2
+    command: [ "tail", "-f", "/dev/null" ]
+    tty: true
+  #******************************************** CI/CD Services *****************************************************************
+  jenkins:
+    container_name: jenkins
+    image: jenkins/jenkins:lts
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins-data:/var/jenkins_home
+    restart: unless-stopped
+    networks:
+      - persistent_network
+volumes:
+  filezilla-config:
+  filezilla-data:
+  pgadmin-data:
+  jenkins-data:
+networks:
+  persistent_network:
+    driver: bridge
